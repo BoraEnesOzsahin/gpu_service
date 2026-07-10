@@ -585,11 +585,11 @@ public class HeartbeatService {
     private Map<String, CurrentPerformance> fetchMinerPerformance(long timeoutSeconds) {
         Map<String, CurrentPerformance> perfMap = new HashMap<>();
 
-        // Execute 'miner' command via bash timeout. Miner screens tail logs, so we limit to 2 seconds.
-        // Use explicit path /hive/bin/miner if available
+        // Read the last 200 lines of any active miner's log file directly.
+        // This avoids the issue of interactive tailing missing the 30-second periodic stats table.
         SystemCommandExecutor.CommandResult result;
         try {
-            result = commandExecutor.execute(List.of("bash", "-c", "timeout 2 /hive/bin/miner || timeout 2 miner"), Duration.ofSeconds(3));
+            result = commandExecutor.execute(List.of("bash", "-c", "tail -n 200 /var/log/miner/*/*.log 2>/dev/null"), Duration.ofSeconds(3));
         } catch (Exception e) {
             log.debug("Failed to execute miner command: {}", e.getMessage());
             return perfMap;
