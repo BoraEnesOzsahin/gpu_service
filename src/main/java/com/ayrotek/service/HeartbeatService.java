@@ -23,20 +23,23 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.ResourceAccessException;
-
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.Duration;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.net.SocketTimeoutException;
 import java.time.Instant;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class HeartbeatService {
@@ -101,6 +104,17 @@ public class HeartbeatService {
 
         List<GpuTelemetry> allGpuTelemetry = mergeAndDeduplicate(nvidiaTelemetry, amdTelemetry);
         log.info("Total GPU telemetry entries: {}", allGpuTelemetry.size());
+
+        // Update performance metrics dynamically from miner
+        Map<String, CurrentPerformance> perfMap = fetchMinerPerformance(timeoutSeconds);
+        if (!perfMap.isEmpty()) {
+            List<GpuTelemetry> updatedTelemetry = new ArrayList<>();
+            for (GpuTelemetry gpu : allGpuTelemetry) {
+                CurrentPerformance perf = perfMap.getOrDefault(gpu.gpuId(), gpu.currentPerformance());
+                updatedTelemetry.add(new GpuTelemetry(gpu.gpuId(), gpu.loadPct(), gpu.tempC(), gpu.powerDrawW(), perf));
+            }
+            allGpuTelemetry = updatedTelemetry;
+        }
 
         NodeStatus nodeStatus = determineStatus(allGpuTelemetry);
         log.info("Determined node status: {}", nodeStatus.getValue());
@@ -562,6 +576,76 @@ public class HeartbeatService {
         boolean anyWorking = telemetry.stream()
                 .anyMatch(gpu -> gpu.loadPct() != null && gpu.loadPct() >= threshold);
         return anyWorking ? NodeStatus.WORKING : NodeStatus.IDLE;
+    }
+
+    // =========================================================================
+    // Miner Performance (HiveOS)
+    // =========================================================================
+
+    private Map<String, CurrentPerformance> fetchMinerPerformance(long timeoutSeconds) {
+        Map<String, CurrentPerformance> perfMap = new HashMap<>();
+
+        // Execute 'miner' command via bash timeout. Miner screens tail logs, so we limit to 2 seconds.
+        SystemCommandExecutor.CommandResult result;
+        try {
+            result = commandExecutor.execute(List.of("bash", "-c", "timeout 2 miner"), Duration.ofSeconds(3));
+        } catch (Exception e) {
+            log.debug("Failed to execute miner command: {}", e.getMessage());
+            return perfMap;
+        }
+
+        String output = result.output();
+        if (output == null || output.isBlank()) {
+            return perfMap;
+        }
+
+        // Pass 1: Map GPU Index -> PCI Bus ID (TeamRedMiner format)
+        // [2026-07-10 17:30:49] 0   23:00.0   40  1400
+        Map<String, String> indexToBusId = new HashMap<>();
+        String[] lines = output.replaceAll("\u001B\\[[;\\d]*m", "").split("\n");
+        for (String line : lines) {
+            if (line.matches(".*\\]\\s+\\d+\\s+[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\\.[0-9].*")) {
+                String[] parts = line.substring(line.indexOf("]") + 1).trim().split("\\s+");
+                if (parts.length >= 2) {
+                    String index = parts[0];
+                    String busId = parts[1];
+                    if (busId.split(":").length == 2) {
+                        busId = "0000:" + busId;
+                    }
+                    indexToBusId.put(index, busId);
+                }
+            }
+        }
+
+        // Pass 2: Extract performance
+        // GPU  0 [44C, fan 60%]      ethash: 33.07Mh/s
+        Pattern p = Pattern.compile("([0-9.]+)\\s*([kMGT]?H/s)", Pattern.CASE_INSENSITIVE);
+        for (String line : lines) {
+            try {
+                if (line.contains("GPU ") && line.toLowerCase().contains("h/s")) {
+                    String afterGpu = line.substring(line.indexOf("GPU ") + 4).trim();
+                    String index = afterGpu.split("\\s+")[0].replaceAll("[^0-9]", "");
+
+                    String busId = indexToBusId.get(index);
+                    if (busId == null) continue;
+
+                    Matcher m = p.matcher(line);
+                    if (m.find()) {
+                        double value = Double.parseDouble(m.group(1));
+                        String unit = m.group(2);
+                        // Normalize capitalization (e.g. Mh/s -> MH/s)
+                        if (unit.equalsIgnoreCase("mh/s")) unit = "MH/s";
+                        if (unit.equalsIgnoreCase("h/s")) unit = "H/s";
+
+                        perfMap.put(busId, new CurrentPerformance(value, unit));
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("Failed to parse miner line: {}", line);
+            }
+        }
+
+        return perfMap;
     }
 
     // =========================================================================
