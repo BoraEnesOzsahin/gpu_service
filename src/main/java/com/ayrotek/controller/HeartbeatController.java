@@ -43,7 +43,7 @@ public class HeartbeatController {
                     @ApiResponse(responseCode = "502", description = "Could not connect to EMS"),
                     @ApiResponse(responseCode = "504", description = "Connection to EMS timed out")
             })
-    public ResponseEntity<String> sendHeartbeat() {
+    public ResponseEntity<Object> sendHeartbeat() {
         return heartbeatService.sendHeartbeat();
     }
 }

@@ -133,7 +133,7 @@ public class HeartbeatService {
      * Requires the node to be in {@code ACTIVE} status with a valid {@code node_id}
      * and {@code api_token}. Throws {@link NodeNotActiveException} otherwise.
      */
-    public ResponseEntity<String> sendHeartbeat() {
+    public ResponseEntity<Object> sendHeartbeat() {
         log.info("Starting heartbeat submission to EMS...");
 
         // --- Guard: node must be ACTIVE with credentials ---
@@ -176,7 +176,7 @@ public class HeartbeatService {
     // EMS HTTP call
     // =========================================================================
 
-    private ResponseEntity<String> postToEms(HeartbeatRequest heartbeatRequest, String apiToken) {
+    private ResponseEntity<Object> postToEms(HeartbeatRequest heartbeatRequest, String apiToken) {
         String heartbeatPath = emsProperties.getHeartbeatPath();
         try {
             ResponseEntity<String> emsResponse = emsRestClient.post()
@@ -196,11 +196,22 @@ public class HeartbeatService {
             // Parse and log EMS response (best-effort; does not affect returned response)
             parseAndLogEmsResponse(emsResponse.getBody(), statusCode);
 
+            // Parse raw JSON string back to a generic Object so Swagger renders it beautifully
+            Object responseBody = null;
+            if (emsResponse.getBody() != null && !emsResponse.getBody().isBlank()) {
+                try {
+                    responseBody = objectMapper.readValue(emsResponse.getBody(), Object.class);
+                } catch (Exception e) {
+                    log.warn("Failed to parse EMS response to Object, returning raw string", e);
+                    responseBody = emsResponse.getBody();
+                }
+            }
+
             // Forward EMS status + body unchanged
             return ResponseEntity
                     .status(emsResponse.getStatusCode())
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(emsResponse.getBody());
+                    .body(responseBody);
 
         } catch (ResourceAccessException e) {
             Throwable cause = e.getCause();
