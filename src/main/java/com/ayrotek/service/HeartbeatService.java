@@ -179,7 +179,7 @@ public class HeartbeatService {
     private ResponseEntity<Object> postToEms(HeartbeatRequest heartbeatRequest, String apiToken) {
         String heartbeatPath = emsProperties.getHeartbeatPath();
         try {
-            ResponseEntity<String> emsResponse = emsRestClient.post()
+            ResponseEntity<Object> emsResponse = emsRestClient.post()
                     .uri(heartbeatPath)
                     .contentType(MediaType.APPLICATION_JSON)
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + apiToken)
@@ -188,7 +188,7 @@ public class HeartbeatService {
                     .onStatus(status -> true, (req, res) -> {
                         // Suppress default error handling — we want raw status + body
                     })
-                    .toEntity(String.class);
+                    .toEntity(Object.class);
 
             int statusCode = emsResponse.getStatusCode().value();
             log.info("EMS heartbeat response: HTTP {}", statusCode);
@@ -196,22 +196,11 @@ public class HeartbeatService {
             // Parse and log EMS response (best-effort; does not affect returned response)
             parseAndLogEmsResponse(emsResponse.getBody(), statusCode);
 
-            // Parse raw JSON string back to a generic Object so Swagger renders it beautifully
-            Object responseBody = null;
-            if (emsResponse.getBody() != null && !emsResponse.getBody().isBlank()) {
-                try {
-                    responseBody = objectMapper.readValue(emsResponse.getBody(), Object.class);
-                } catch (Exception e) {
-                    log.warn("Failed to parse EMS response to Object, returning raw string", e);
-                    responseBody = emsResponse.getBody();
-                }
-            }
-
             // Forward EMS status + body unchanged
             return ResponseEntity
                     .status(emsResponse.getStatusCode())
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(responseBody);
+                    .body(emsResponse.getBody());
 
         } catch (ResourceAccessException e) {
             Throwable cause = e.getCause();
@@ -232,13 +221,13 @@ public class HeartbeatService {
         }
     }
 
-    private void parseAndLogEmsResponse(String body, int httpStatus) {
-        if (body == null || body.isBlank()) {
+    private void parseAndLogEmsResponse(Object body, int httpStatus) {
+        if (body == null) {
             log.debug("EMS heartbeat response body is empty (HTTP {}).", httpStatus);
             return;
         }
         try {
-            HeartbeatEmsResponse emsResponse = objectMapper.readValue(body, HeartbeatEmsResponse.class);
+            HeartbeatEmsResponse emsResponse = objectMapper.convertValue(body, HeartbeatEmsResponse.class);
             log.info("Heartbeat accepted by EMS: command={}, setpointPowerW={}, nextHeartbeat={}",
                     emsResponse.command(),
                     emsResponse.setpointPowerW(),
