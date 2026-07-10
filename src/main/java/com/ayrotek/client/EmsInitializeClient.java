@@ -1,8 +1,9 @@
 package com.ayrotek.client;
 
 import com.ayrotek.dto.InitializeRequest;
+import org.springframework.http.ResponseEntity;
 
 public interface EmsInitializeClient {
 
-    EmsRawResponse send(InitializeRequest initializeRequest);
+    ResponseEntity<String> send(InitializeRequest initializeRequest);
 }

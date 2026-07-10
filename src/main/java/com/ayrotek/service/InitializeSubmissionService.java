@@ -4,5 +4,5 @@ import org.springframework.http.ResponseEntity;
 
 public interface InitializeSubmissionService {
 
-    ResponseEntity<byte[]> sendInitializeRequest();
+    ResponseEntity<String> sendInitializeRequest();
 }

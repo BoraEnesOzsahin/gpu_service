@@ -64,7 +64,7 @@ public class InitializeController {
         }
     )
     @PostMapping("/initialize/send")
-    public ResponseEntity<byte[]> sendInitializeRequest() {
+    public ResponseEntity<String> sendInitializeRequest() {
         return initializeSubmissionService.sendInitializeRequest();
     }
 }

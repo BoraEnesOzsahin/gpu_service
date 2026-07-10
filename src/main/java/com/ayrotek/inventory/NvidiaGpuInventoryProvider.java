@@ -2,8 +2,8 @@ package com.ayrotek.inventory;
 
 import com.ayrotek.dto.ComputeCapability;
 import com.ayrotek.dto.GpuInventory;
-import com.ayrotek.util.CommandResult;
 import com.ayrotek.util.SystemCommandExecutor;
+import com.ayrotek.util.SystemCommandExecutor.CommandResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;

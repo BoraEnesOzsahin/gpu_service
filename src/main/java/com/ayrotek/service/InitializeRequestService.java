@@ -45,9 +45,6 @@ public class InitializeRequestService {
         request.setGpuInventory(gpuInventory);
         request.setCapabilities(capabilities);
 
-        // The gpu_telemetry field is no longer part of the InitializeRequest DTO.
-        // The line `request.setGpuTelemetry(Collections.emptyList());` is removed.
-
         return request;
     }
 }

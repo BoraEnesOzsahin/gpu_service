@@ -11,6 +11,10 @@ device:
 ems:
   base-url: http://147.228.93.216
   initialize-path: /api/v1/nodes/initialize
+  heartbeat-path: /api/v1/nodes/heartbeat
   connect-timeout: 5s
   read-timeout: 15s
 
+heartbeat:
+  working-load-threshold-pct: 10
+  command-timeout: 5s

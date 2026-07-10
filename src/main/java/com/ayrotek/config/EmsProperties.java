@@ -17,6 +17,9 @@ public class EmsProperties {
     @NotBlank
     private String initializePath;
 
+    @NotBlank
+    private String heartbeatPath;
+
     @NotNull
     private Duration connectTimeout;
 
@@ -37,6 +40,14 @@ public class EmsProperties {
 
     public void setInitializePath(String initializePath) {
         this.initializePath = initializePath;
+    }
+
+    public String getHeartbeatPath() {
+        return heartbeatPath;
+    }
+
+    public void setHeartbeatPath(String heartbeatPath) {
+        this.heartbeatPath = heartbeatPath;
     }
 
     public Duration getConnectTimeout() {

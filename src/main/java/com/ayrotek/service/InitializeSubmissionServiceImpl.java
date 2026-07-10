@@ -1,7 +1,6 @@
 package com.ayrotek.service;
 
 import com.ayrotek.client.EmsInitializeClient;
-import com.ayrotek.client.EmsRawResponse;
 import com.ayrotek.dto.InitializeRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Objects;
 
 @Service
 public class InitializeSubmissionServiceImpl implements InitializeSubmissionService {
@@ -22,15 +22,18 @@ public class InitializeSubmissionServiceImpl implements InitializeSubmissionServ
 
     private final InitializeRequestService initializeRequestService;
     private final EmsInitializeClient emsInitializeClient;
+    private final InitializeResponseProcessor initializeResponseProcessor;
 
     public InitializeSubmissionServiceImpl(InitializeRequestService initializeRequestService,
-                                           EmsInitializeClient emsInitializeClient) {
+                                           EmsInitializeClient emsInitializeClient,
+                                           InitializeResponseProcessor initializeResponseProcessor) {
         this.initializeRequestService = initializeRequestService;
         this.emsInitializeClient = emsInitializeClient;
+        this.initializeResponseProcessor = initializeResponseProcessor;
     }
 
     @Override
-    public ResponseEntity<byte[]> sendInitializeRequest() {
+    public ResponseEntity<String> sendInitializeRequest() {
         log.info("Starting initialize request submission to EMS");
 
         InitializeRequest initializeRequest = initializeRequestService.buildInitializeRequest();
@@ -38,12 +41,18 @@ public class InitializeSubmissionServiceImpl implements InitializeSubmissionServ
         log.info("Submitting initialize request for hardwareId={} with gpuCount={}",
                 initializeRequest.getHardwareId(), gpuCount);
 
-        EmsRawResponse emsResponse = emsInitializeClient.send(initializeRequest);
-        log.info("EMS returned status={}", emsResponse.statusCode().value());
+        ResponseEntity<String> emsResponse = emsInitializeClient.send(initializeRequest);
 
-        return ResponseEntity.status(emsResponse.statusCode())
-                .headers(safeResponseHeaders(emsResponse.headers()))
-                .body(emsResponse.body());
+        if (Objects.nonNull(emsResponse)) {
+            log.info("EMS returned status={}", emsResponse.getStatusCode());
+            initializeResponseProcessor.process(emsResponse);
+
+            return ResponseEntity.status(emsResponse.getStatusCode())
+                    .headers(safeResponseHeaders(emsResponse.getHeaders()))
+                    .body(emsResponse.getBody());
+        }
+
+        return ResponseEntity.internalServerError().build();
     }
 
     private HttpHeaders safeResponseHeaders(HttpHeaders sourceHeaders) {

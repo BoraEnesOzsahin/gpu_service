@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
@@ -15,6 +16,7 @@ import org.springframework.web.client.RestClient;
 import java.io.InterruptedIOException;
 import java.net.SocketTimeoutException;
 import java.net.http.HttpTimeoutException;
+import java.nio.charset.StandardCharsets;
 
 @Component
 public class EmsInitializeClientImpl implements EmsInitializeClient {
@@ -30,7 +32,7 @@ public class EmsInitializeClientImpl implements EmsInitializeClient {
     }
 
     @Override
-    public EmsRawResponse send(InitializeRequest initializeRequest) {
+    public ResponseEntity<String> send(InitializeRequest initializeRequest) {
         String endpoint = emsProperties.getBaseUrl() + emsProperties.getInitializePath();
         log.info("Sending initialize request to EMS endpoint={}", endpoint);
 
@@ -42,8 +44,8 @@ public class EmsInitializeClientImpl implements EmsInitializeClient {
                     .exchange((request, response) -> {
                         HttpHeaders headers = new HttpHeaders();
                         headers.putAll(response.getHeaders());
-                        byte[] body = response.getBody().readAllBytes();
-                        return new EmsRawResponse(response.getStatusCode(), headers, body);
+                        String body = new String(response.getBody().readAllBytes(), StandardCharsets.UTF_8);
+                        return new ResponseEntity<>(body, headers, response.getStatusCode());
                     });
         } catch (ResourceAccessException ex) {
             if (isTimeout(ex)) {
