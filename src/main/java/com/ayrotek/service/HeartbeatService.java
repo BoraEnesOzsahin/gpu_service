@@ -297,8 +297,8 @@ public class HeartbeatService {
     // =========================================================================
 
     private List<GpuTelemetry> collectAmdTelemetry(long timeoutSeconds) {
-        // First try HiveOS amd-info
-        Optional<String> outputOpt = tryAmdSmiCommand("amd-info", timeoutSeconds);
+        // First try HiveOS amd-info via bash to resolve path/aliases
+        Optional<String> outputOpt = tryAmdSmiCommand("bash -c \"amd-info\"", timeoutSeconds);
         if (outputOpt.isPresent()) {
             return parseAmdInfoOutput(outputOpt.get());
         }
@@ -321,8 +321,10 @@ public class HeartbeatService {
     }
 
     private List<GpuTelemetry> parseAmdInfoOutput(String output) {
+        // Strip ANSI escape codes (colors)
+        String cleanOutput = output.replaceAll("\u001B\\[[;\\d]*m", "");
         List<GpuTelemetry> result = new ArrayList<>();
-        String[] blocks = output.split("=== GPU ");
+        String[] blocks = cleanOutput.split("=== GPU ");
         for (int i = 1; i < blocks.length; i++) {
             try {
                 String block = blocks[i];

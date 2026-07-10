@@ -35,17 +35,17 @@ public class AmdGpuInventoryProvider implements GpuInventoryProvider {
     public boolean isAvailable() {
         if (available == null) {
             try {
-                // HiveOS native AMD info command
-                CommandResult result = executor.execute(List.of("amd-info"), CMD_TIMEOUT);
+                // HiveOS native AMD info command via bash to ensure PATH/alias resolution
+                CommandResult result = executor.execute(List.of("bash", "-c", "amd-info"), CMD_TIMEOUT);
                 if (result.exitCode() == 0 && !result.stdout().isEmpty()) {
                     available = true;
                     return true;
                 }
 
                 // Fallback to rocm-smi / amd-smi
-                result = executor.execute(List.of("rocm-smi", "--version"), CMD_TIMEOUT);
+                result = executor.execute(List.of("bash", "-c", "rocm-smi --version"), CMD_TIMEOUT);
                 if (result.exitCode() != 0) {
-                    result = executor.execute(List.of("amd-smi", "--version"), CMD_TIMEOUT);
+                    result = executor.execute(List.of("bash", "-c", "amd-smi --version"), CMD_TIMEOUT);
                 }
                 available = result.exitCode() == 0;
             } catch (Exception e) {
@@ -62,8 +62,8 @@ public class AmdGpuInventoryProvider implements GpuInventoryProvider {
             return Collections.emptyList();
         }
         try {
-            // 1. Try HiveOS amd-info
-            CommandResult result = executor.execute(List.of("amd-info"), CMD_TIMEOUT);
+            // 1. Try HiveOS amd-info via bash
+            CommandResult result = executor.execute(List.of("bash", "-c", "amd-info"), CMD_TIMEOUT);
             if (result.exitCode() == 0 && !result.stdout().isEmpty()) {
                 List<GpuInventory> gpus = parseAmdInfo(result.stdout());
                 if (!gpus.isEmpty()) {
@@ -72,12 +72,12 @@ public class AmdGpuInventoryProvider implements GpuInventoryProvider {
             }
 
             // 2. ROCm SMI is the modern tool, prefer it. It has a stable JSON output format.
-            result = executor.execute(List.of("rocm-smi", "--show-static-info", "-a", "--json"), CMD_TIMEOUT);
+            result = executor.execute(List.of("bash", "-c", "rocm-smi --show-static-info -a --json"), CMD_TIMEOUT);
             
             // 3. Fallback for older amd-smi versions which might have a different command structure
             if (result.exitCode() != 0) {
                 log.warn("`rocm-smi --show-static-info -a --json` failed, trying `amd-smi static --json`...");
-                result = executor.execute(List.of("amd-smi", "static", "--json"), CMD_TIMEOUT);
+                result = executor.execute(List.of("bash", "-c", "amd-smi static --json"), CMD_TIMEOUT);
             }
 
             if (result.exitCode() != 0 || result.stdout().isEmpty()) {
@@ -105,8 +105,10 @@ public class AmdGpuInventoryProvider implements GpuInventoryProvider {
     }
 
     private List<GpuInventory> parseAmdInfo(String output) {
+        // Strip ANSI escape codes (colors) which are common in HiveOS outputs
+        String cleanOutput = output.replaceAll("\u001B\\[[;\\d]*m", "");
         List<GpuInventory> gpus = new ArrayList<>();
-        String[] blocks = output.split("=== GPU ");
+        String[] blocks = cleanOutput.split("=== GPU ");
         for (int i = 1; i < blocks.length; i++) {
             try {
                 String block = blocks[i];
