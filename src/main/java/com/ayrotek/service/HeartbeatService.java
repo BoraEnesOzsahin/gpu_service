@@ -297,8 +297,14 @@ public class HeartbeatService {
     // =========================================================================
 
     private List<GpuTelemetry> collectAmdTelemetry(long timeoutSeconds) {
+        // First try HiveOS amd-info
+        Optional<String> outputOpt = tryAmdSmiCommand("amd-info", timeoutSeconds);
+        if (outputOpt.isPresent()) {
+            return parseAmdInfoOutput(outputOpt.get());
+        }
+
         // Try rocm-smi first (preferred), then fall back to amd-smi
-        Optional<String> outputOpt = tryAmdSmiCommand(
+        outputOpt = tryAmdSmiCommand(
                 "rocm-smi --showuse --showtemp --showpower --json",
                 timeoutSeconds
         ).or(() -> tryAmdSmiCommand(
@@ -307,11 +313,67 @@ public class HeartbeatService {
         ));
 
         if (outputOpt.isEmpty()) {
-            log.warn("No AMD SMI tool available or all AMD SMI commands failed. Skipping AMD telemetry.");
+            log.warn("No AMD SMI tool or amd-info available. Skipping AMD telemetry.");
             return List.of();
         }
 
         return parseAmdJson(outputOpt.get());
+    }
+
+    private List<GpuTelemetry> parseAmdInfoOutput(String output) {
+        List<GpuTelemetry> result = new ArrayList<>();
+        String[] blocks = output.split("=== GPU ");
+        for (int i = 1; i < blocks.length; i++) {
+            try {
+                String block = blocks[i];
+                String[] lines = block.split("\n");
+                String header = lines[0].replace("===", "").trim();
+                String[] headerParts = header.split(",", 2);
+                if (headerParts.length < 2) continue;
+
+                String busAndName = headerParts[1].trim();
+                int spaceIdx = busAndName.indexOf(" ");
+                if (spaceIdx == -1) continue;
+
+                String busId = busAndName.substring(0, spaceIdx).trim();
+                if (busId.split(":").length == 2) {
+                    busId = "0000:" + busId;
+                }
+
+                Double loadPct = null;
+                Double powerDrawW = null;
+                Double tempC = null;
+
+                for (String line : lines) {
+                    if (line.contains("Load: ")) {
+                        String loadStr = line.substring(line.indexOf("Load: ") + 6);
+                        int endIdx = loadStr.indexOf("%");
+                        if (endIdx != -1) {
+                            loadPct = parseDoubleField(loadStr.substring(0, endIdx).trim(), "Load", line);
+                        }
+                    }
+                    if (line.contains("Power: ")) {
+                        String powerStr = line.substring(line.indexOf("Power: ") + 7);
+                        int endIdx = powerStr.indexOf("W");
+                        if (endIdx != -1) {
+                            powerDrawW = parseDoubleField(powerStr.substring(0, endIdx).trim(), "Power", line);
+                        }
+                    }
+                    if (line.contains("Core: ") && line.contains("°C")) {
+                        String tempStr = line.substring(line.indexOf("Core: ") + 6);
+                        int endIdx = tempStr.indexOf("°C");
+                        if (endIdx != -1) {
+                            tempC = parseDoubleField(tempStr.substring(0, endIdx).trim(), "Core Temp", line);
+                        }
+                    }
+                }
+
+                result.add(new GpuTelemetry(busId, loadPct, tempC, powerDrawW, unavailablePerformance()));
+            } catch (Exception e) {
+                log.warn("Failed to parse amd-info block", e);
+            }
+        }
+        return result;
     }
 
     private Optional<String> tryAmdSmiCommand(String command, long timeoutSeconds) {

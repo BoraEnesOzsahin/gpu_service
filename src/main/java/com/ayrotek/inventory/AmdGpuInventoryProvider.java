@@ -35,8 +35,15 @@ public class AmdGpuInventoryProvider implements GpuInventoryProvider {
     public boolean isAvailable() {
         if (available == null) {
             try {
-                // A simple command to check if amd-smi/rocm-smi is installed and working
-                CommandResult result = executor.execute(List.of("rocm-smi", "--version"), CMD_TIMEOUT);
+                // HiveOS native AMD info command
+                CommandResult result = executor.execute(List.of("amd-info"), CMD_TIMEOUT);
+                if (result.exitCode() == 0 && !result.stdout().isEmpty()) {
+                    available = true;
+                    return true;
+                }
+
+                // Fallback to rocm-smi / amd-smi
+                result = executor.execute(List.of("rocm-smi", "--version"), CMD_TIMEOUT);
                 if (result.exitCode() != 0) {
                     result = executor.execute(List.of("amd-smi", "--version"), CMD_TIMEOUT);
                 }
@@ -55,10 +62,19 @@ public class AmdGpuInventoryProvider implements GpuInventoryProvider {
             return Collections.emptyList();
         }
         try {
-            // ROCm SMI is the modern tool, prefer it. It has a stable JSON output format.
-            CommandResult result = executor.execute(List.of("rocm-smi", "--show-static-info", "-a", "--json"), CMD_TIMEOUT);
+            // 1. Try HiveOS amd-info
+            CommandResult result = executor.execute(List.of("amd-info"), CMD_TIMEOUT);
+            if (result.exitCode() == 0 && !result.stdout().isEmpty()) {
+                List<GpuInventory> gpus = parseAmdInfo(result.stdout());
+                if (!gpus.isEmpty()) {
+                    return gpus;
+                }
+            }
+
+            // 2. ROCm SMI is the modern tool, prefer it. It has a stable JSON output format.
+            result = executor.execute(List.of("rocm-smi", "--show-static-info", "-a", "--json"), CMD_TIMEOUT);
             
-            // Fallback for older amd-smi versions which might have a different command structure
+            // 3. Fallback for older amd-smi versions which might have a different command structure
             if (result.exitCode() != 0) {
                 log.warn("`rocm-smi --show-static-info -a --json` failed, trying `amd-smi static --json`...");
                 result = executor.execute(List.of("amd-smi", "static", "--json"), CMD_TIMEOUT);
@@ -86,6 +102,56 @@ public class AmdGpuInventoryProvider implements GpuInventoryProvider {
             log.error("Failed to detect AMD GPUs.", e);
             return Collections.emptyList();
         }
+    }
+
+    private List<GpuInventory> parseAmdInfo(String output) {
+        List<GpuInventory> gpus = new ArrayList<>();
+        String[] blocks = output.split("=== GPU ");
+        for (int i = 1; i < blocks.length; i++) {
+            try {
+                String block = blocks[i];
+                String[] lines = block.split("\n");
+                String header = lines[0].replace("===", "").trim();
+                String[] headerParts = header.split(",", 2);
+                if (headerParts.length < 2) continue;
+
+                String busAndName = headerParts[1].trim();
+                int spaceIdx = busAndName.indexOf(" ");
+                if (spaceIdx == -1) continue;
+
+                String busId = busAndName.substring(0, spaceIdx).trim();
+                String name = busAndName.substring(spaceIdx + 1).trim();
+
+                // Normalize bus ID to match format "0000:23:00.0"
+                if (busId.split(":").length == 2) {
+                    busId = "0000:" + busId;
+                }
+
+                int tdp = 0;
+                for (String line : lines) {
+                    if (line.contains("Cap: ")) {
+                        String capStr = line.substring(line.indexOf("Cap: ") + 5);
+                        int endIdx = capStr.indexOf("W");
+                        if (endIdx != -1) {
+                            capStr = capStr.substring(0, endIdx).trim();
+                        }
+                        try {
+                            tdp = Integer.parseInt(capStr);
+                        } catch (NumberFormatException ignored) {}
+                    }
+                }
+
+                GpuInventory inventory = new GpuInventory();
+                inventory.setGpuId(busId);
+                inventory.setName(name);
+                inventory.setTdpW(tdp);
+                inventory.setComputeCapability(new ComputeCapability(0, "MH/s"));
+                gpus.add(inventory);
+            } catch (Exception e) {
+                log.warn("Failed to parse amd-info block", e);
+            }
+        }
+        return gpus;
     }
 
     private Optional<GpuInventory> parseGpuNode(JsonNode gpuNode) {
