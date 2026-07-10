@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: gpu_service
+
+device:
+  model: RECKON_MULTI_GPU_RIG_V1
+  firmware-version: 1.2.0
+  system-power-overhead-w: 150
+  idle-power-w: 150
+
