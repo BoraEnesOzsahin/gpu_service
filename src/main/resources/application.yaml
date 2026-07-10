@@ -8,3 +8,9 @@ device:
   system-power-overhead-w: 150
   idle-power-w: 150
 
+ems:
+  base-url: http://147.228.93.216
+  initialize-path: /api/v1/nodes/initialize
+  connect-timeout: 5s
+  read-timeout: 15s
+

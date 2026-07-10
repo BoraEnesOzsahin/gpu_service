@@ -37,6 +37,28 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return new ResponseEntity<>(errorResponse, HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
+    @ExceptionHandler(EmsConnectionException.class)
+    public ResponseEntity<ApiErrorResponse> handleEmsConnectionException(EmsConnectionException ex, WebRequest request) {
+        log.error("Unable to reach EMS: {}", ex.getMessage(), ex);
+        ApiErrorResponse errorResponse = new ApiErrorResponse(
+                HttpStatus.BAD_GATEWAY,
+                "EMS could not be reached. Check logs for details.",
+                request.getDescription(false).substring(4)
+        );
+        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_GATEWAY);
+    }
+
+    @ExceptionHandler(EmsTimeoutException.class)
+    public ResponseEntity<ApiErrorResponse> handleEmsTimeoutException(EmsTimeoutException ex, WebRequest request) {
+        log.error("Timed out while calling EMS: {}", ex.getMessage(), ex);
+        ApiErrorResponse errorResponse = new ApiErrorResponse(
+                HttpStatus.GATEWAY_TIMEOUT,
+                "EMS request timed out. Check logs for details.",
+                request.getDescription(false).substring(4)
+        );
+        return new ResponseEntity<>(errorResponse, HttpStatus.GATEWAY_TIMEOUT);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleGlobalException(Exception ex, WebRequest request) {
         log.error("An unexpected error occurred: {}", ex.getMessage(), ex);
