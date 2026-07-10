@@ -586,9 +586,10 @@ public class HeartbeatService {
         Map<String, CurrentPerformance> perfMap = new HashMap<>();
 
         // Execute 'miner' command via bash timeout. Miner screens tail logs, so we limit to 2 seconds.
+        // Use explicit path /hive/bin/miner if available
         SystemCommandExecutor.CommandResult result;
         try {
-            result = commandExecutor.execute(List.of("bash", "-c", "timeout 2 miner"), Duration.ofSeconds(3));
+            result = commandExecutor.execute(List.of("bash", "-c", "timeout 2 /hive/bin/miner || timeout 2 miner"), Duration.ofSeconds(3));
         } catch (Exception e) {
             log.debug("Failed to execute miner command: {}", e.getMessage());
             return perfMap;
@@ -599,9 +600,10 @@ public class HeartbeatService {
             return perfMap;
         }
 
-        // Pass 1: Map GPU Index -> PCI Bus ID (TeamRedMiner format)
-        // [2026-07-10 17:30:49] 0   23:00.0   40  1400
+        // Pass 1: Map GPU Index -> PCI Bus ID
         Map<String, String> indexToBusId = new HashMap<>();
+        
+        // Strategy A: Try to find mapping in the miner output (TeamRedMiner format)
         String[] lines = output.replaceAll("\u001B\\[[;\\d]*m", "").split("\n");
         for (String line : lines) {
             if (line.matches(".*\\]\\s+\\d+\\s+[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\\.[0-9].*")) {
@@ -614,6 +616,33 @@ public class HeartbeatService {
                     }
                     indexToBusId.put(index, busId);
                 }
+            }
+        }
+
+        // Strategy B: If miner log didn't contain the mapping table, fetch it from amd-info
+        if (indexToBusId.isEmpty()) {
+            try {
+                SystemCommandExecutor.CommandResult amdInfoResult = commandExecutor.execute(List.of("bash", "-c", "amd-info"), Duration.ofSeconds(5));
+                if (amdInfoResult.exitCode() == 0 && amdInfoResult.output() != null) {
+                    String[] blocks = amdInfoResult.output().replaceAll("\u001B\\[[;\\d]*m", "").split("=== GPU ");
+                    for (int i = 1; i < blocks.length; i++) {
+                        String block = blocks[i];
+                        String header = block.split("\n")[0].replace("===", "").trim();
+                        String[] headerParts = header.split(",", 2);
+                        if (headerParts.length >= 2) {
+                            String idx = headerParts[0].trim();
+                            String busAndName = headerParts[1].trim();
+                            int spaceIdx = busAndName.indexOf(" ");
+                            if (spaceIdx != -1) {
+                                String busId = busAndName.substring(0, spaceIdx).trim();
+                                if (busId.split(":").length == 2) busId = "0000:" + busId;
+                                indexToBusId.put(idx, busId);
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("Failed to fallback map indices via amd-info: {}", e.getMessage());
             }
         }
 
