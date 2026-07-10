@@ -133,7 +133,7 @@ public class HeartbeatService {
      * Requires the node to be in {@code ACTIVE} status with a valid {@code node_id}
      * and {@code api_token}. Throws {@link NodeNotActiveException} otherwise.
      */
-    public ResponseEntity<byte[]> sendHeartbeat() {
+    public ResponseEntity<JsonNode> sendHeartbeat() {
         log.info("Starting heartbeat submission to EMS...");
 
         // --- Guard: node must be ACTIVE with credentials ---
@@ -176,10 +176,10 @@ public class HeartbeatService {
     // EMS HTTP call
     // =========================================================================
 
-    private ResponseEntity<byte[]> postToEms(HeartbeatRequest heartbeatRequest, String apiToken) {
+    private ResponseEntity<JsonNode> postToEms(HeartbeatRequest heartbeatRequest, String apiToken) {
         String heartbeatPath = emsProperties.getHeartbeatPath();
         try {
-            ResponseEntity<byte[]> emsResponse = emsRestClient.post()
+            ResponseEntity<JsonNode> emsResponse = emsRestClient.post()
                     .uri(heartbeatPath)
                     .contentType(MediaType.APPLICATION_JSON)
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + apiToken)
@@ -188,7 +188,7 @@ public class HeartbeatService {
                     .onStatus(status -> true, (req, res) -> {
                         // Suppress default error handling — we want raw status + body
                     })
-                    .toEntity(byte[].class);
+                    .toEntity(JsonNode.class);
 
             int statusCode = emsResponse.getStatusCode().value();
             log.info("EMS heartbeat response: HTTP {}", statusCode);
@@ -217,19 +217,22 @@ public class HeartbeatService {
         } catch (RestClientResponseException e) {
             // Should not happen with onStatus override, but handle defensively
             log.warn("EMS returned error status {}: {}", e.getStatusCode(), e.getMessage());
-            return ResponseEntity
-                    .status(e.getStatusCode())
-                    .body(e.getResponseBodyAsByteArray());
+            try {
+                JsonNode errorNode = objectMapper.readTree(e.getResponseBodyAsString());
+                return ResponseEntity.status(e.getStatusCode()).body(errorNode);
+            } catch (Exception parseEx) {
+                return ResponseEntity.status(e.getStatusCode()).body(null);
+            }
         }
     }
 
-    private void parseAndLogEmsResponse(byte[] body, int httpStatus) {
-        if (body == null || body.length == 0) {
+    private void parseAndLogEmsResponse(JsonNode body, int httpStatus) {
+        if (body == null || body.isEmpty()) {
             log.debug("EMS heartbeat response body is empty (HTTP {}).", httpStatus);
             return;
         }
         try {
-            HeartbeatEmsResponse emsResponse = objectMapper.readValue(body, HeartbeatEmsResponse.class);
+            HeartbeatEmsResponse emsResponse = objectMapper.treeToValue(body, HeartbeatEmsResponse.class);
             log.info("Heartbeat accepted by EMS: command={}, setpointPowerW={}, nextHeartbeat={}",
                     emsResponse.command(),
                     emsResponse.setpointPowerW(),
