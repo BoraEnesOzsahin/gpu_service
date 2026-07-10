@@ -10,7 +10,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import com.fasterxml.jackson.databind.JsonNode;
 
 @RestController
 @RequestMapping("/api/v1/device")
@@ -44,7 +43,7 @@ public class HeartbeatController {
                     @ApiResponse(responseCode = "502", description = "Could not connect to EMS"),
                     @ApiResponse(responseCode = "504", description = "Connection to EMS timed out")
             })
-    public ResponseEntity<JsonNode> sendHeartbeat() {
+    public ResponseEntity<String> sendHeartbeat() {
         return heartbeatService.sendHeartbeat();
     }
 }
