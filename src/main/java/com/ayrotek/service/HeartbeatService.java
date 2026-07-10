@@ -497,36 +497,20 @@ public class HeartbeatService {
      * then falls back to 'sensors -j' (lm-sensors package).
      */
     private Double readSystemTemperatureLinux(long timeoutSeconds) {
-        // Primary: kernel thermal zone — no external tool required
-        for (int zone = 0; zone <= 10; zone++) {
-            Path tempFile = Path.of("/sys/class/thermal/thermal_zone" + zone + "/temp");
-            try {
-                if (Files.exists(tempFile)) {
-                    String raw = Files.readString(tempFile).trim();
-                    double milliCelsius = Double.parseDouble(raw);
-                    double celsius = milliCelsius / 1000.0;
-                    if (celsius > 0.0 && celsius < 150.0) {
-                        log.debug("System temperature read from thermal_zone{}: {}°C", zone, celsius);
-                        return celsius;
-                    }
-                }
-            } catch (Exception e) {
-                log.debug("Failed to read thermal_zone{}: {}", zone, e.getMessage());
-            }
-        }
-
-        // Fallback: lm-sensors
+        // User requested specific bash pipeline for sensors
+        List<String> cmd = List.of("bash", "-c", "sensors | grep -E '(Tctl|junction|mem):' | grep -oE ':\\s+\\+[0-9]+\\.[0-9]' | grep -oE '[0-9]+\\.[0-9]' | sort -rn | head -n 1");
+        
         try {
-            SystemCommandExecutor.CommandResult result = commandExecutor.execute("sensors -j", timeoutSeconds);
+            SystemCommandExecutor.CommandResult result = commandExecutor.execute(cmd, Duration.ofSeconds(timeoutSeconds));
             if (result.exitCode() == 0 && result.output() != null && !result.output().isBlank()) {
-                Double temp = parseSensorsJson(result.output());
-                if (temp != null) {
-                    log.debug("System temperature read from 'sensors': {}°C", temp);
+                Double temp = Double.parseDouble(result.output().trim());
+                if (temp > 0.0 && temp < 150.0) {
+                    log.debug("System temperature read from 'sensors' command pipeline: {}°C", temp);
                     return temp;
                 }
             }
         } catch (Exception e) {
-            log.debug("'sensors -j' not available or failed: {}", e.getMessage());
+            log.debug("User's sensors command pipeline failed: {}", e.getMessage());
         }
 
         log.debug("Could not read system temperature on Linux.");
@@ -564,34 +548,7 @@ public class HeartbeatService {
         return null;
     }
 
-    private Double parseSensorsJson(String json) {
-        try {
-            JsonNode root = objectMapper.readTree(json);
-            // sensors -j: { "chipName-...": { "featureName": { "tempX_input": value, ... } } }
-            for (JsonNode chip : root) {
-                if (!chip.isObject()) continue;
-                for (JsonNode feature : chip) {
-                    if (!feature.isObject()) continue;
-                    var iter = feature.fields();
-                    while (iter.hasNext()) {
-                        var entry = iter.next();
-                        String key = entry.getKey();
-                        JsonNode val = entry.getValue();
-                        if (key.endsWith("_input") && val.isNumber()) {
-                            double v = val.asDouble();
-                            // Sanity check: plausible CPU/board temperature range
-                            if (v > 0 && v < 150) {
-                                return v;
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.debug("Failed to parse 'sensors -j' output: {}", e.getMessage());
-        }
-        return null;
-    }
+
 
     // =========================================================================
     // Status determination
