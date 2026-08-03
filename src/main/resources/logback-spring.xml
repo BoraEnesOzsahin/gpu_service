@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <springProperty scope="context" name="springAppName" source="spring.application.name" defaultValue="payment-service"/>
+
+    <!-- CONSOLE_JSON Appender -->
+    <appender name="CONSOLE_JSON" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <customFields>{"service.name":"${springAppName}","event.dataset":"${springAppName}.application"}</customFields>
+            <includeMdcKeyName>trace.id</includeMdcKeyName>
+            <includeMdcKeyName>audit.actor</includeMdcKeyName>
+            <includeMdcKeyName>audit.action</includeMdcKeyName>
+            <includeMdcKeyName>audit.resource</includeMdcKeyName>
+            <includeMdcKeyName>audit.result</includeMdcKeyName>
+            <includeMdcKeyName>error.code</includeMdcKeyName>
+            <includeMdcKeyName>http.method</includeMdcKeyName>
+            <includeMdcKeyName>http.status_code</includeMdcKeyName>
+            <includeMdcKeyName>url.path</includeMdcKeyName>
+            <includeMdcKeyName>event.duration_ms</includeMdcKeyName>
+            <includeMdcKeyName>event.outcome</includeMdcKeyName>
+            <includeMdcKeyName>error.category</includeMdcKeyName>
+        </encoder>
+    </appender>
+
+    <!-- AUDIT_FILE Appender -->
+    <appender name="AUDIT_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/payment/audit.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>logs/payment/audit.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>30</maxHistory>
+        </rollingPolicy>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <customFields>{"service.name":"${springAppName}","event.dataset":"${springAppName}.audit"}</customFields>
+            <includeMdcKeyName>trace.id</includeMdcKeyName>
+            <includeMdcKeyName>audit.actor</includeMdcKeyName>
+            <includeMdcKeyName>audit.action</includeMdcKeyName>
+            <includeMdcKeyName>audit.resource</includeMdcKeyName>
+            <includeMdcKeyName>audit.result</includeMdcKeyName>
+            <includeMdcKeyName>error.code</includeMdcKeyName>
+            <includeMdcKeyName>http.method</includeMdcKeyName>
+            <includeMdcKeyName>http.status_code</includeMdcKeyName>
+            <includeMdcKeyName>url.path</includeMdcKeyName>
+            <includeMdcKeyName>event.duration_ms</includeMdcKeyName>
+            <includeMdcKeyName>event.outcome</includeMdcKeyName>
+            <includeMdcKeyName>error.category</includeMdcKeyName>
+        </encoder>
+    </appender>
+
+    <!-- ERROR_FILE Appender -->
+    <appender name="ERROR_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/payment/error.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>logs/payment/error.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>30</maxHistory>
+        </rollingPolicy>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>ERROR</level>
+        </filter>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <customFields>{"service.name":"${springAppName}","event.dataset":"${springAppName}.error"}</customFields>
+            <includeMdcKeyName>trace.id</includeMdcKeyName>
+            <includeMdcKeyName>audit.actor</includeMdcKeyName>
+            <includeMdcKeyName>audit.action</includeMdcKeyName>
+            <includeMdcKeyName>audit.resource</includeMdcKeyName>
+            <includeMdcKeyName>audit.result</includeMdcKeyName>
+            <includeMdcKeyName>error.code</includeMdcKeyName>
+            <includeMdcKeyName>http.method</includeMdcKeyName>
+            <includeMdcKeyName>http.status_code</includeMdcKeyName>
+            <includeMdcKeyName>url.path</includeMdcKeyName>
+            <includeMdcKeyName>event.duration_ms</includeMdcKeyName>
+            <includeMdcKeyName>event.outcome</includeMdcKeyName>
+            <includeMdcKeyName>error.category</includeMdcKeyName>
+        </encoder>
+    </appender>
+
+    <!-- Audit Logger -->
+    <logger name="audit" level="INFO" additivity="false">
+        <appender-ref ref="AUDIT_FILE" />
+    </logger>
+
+    <!-- Root Logger -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE_JSON" />
+        <appender-ref ref="ERROR_FILE" />
+    </root>
+
+</configuration>
